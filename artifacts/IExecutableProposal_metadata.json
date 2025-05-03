@@ -1,0 +1,69 @@
+{
+	"compiler": {
+		"version": "0.8.26+commit.8a97fa7a"
+	},
+	"language": "Solidity",
+	"output": {
+		"abi": [
+			{
+				"inputs": [
+					{
+						"internalType": "uint256",
+						"name": "proposalId",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "numVotes",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "numTokens",
+						"type": "uint256"
+					}
+				],
+				"name": "executeProposal",
+				"outputs": [],
+				"stateMutability": "payable",
+				"type": "function"
+			}
+		],
+		"devdoc": {
+			"kind": "dev",
+			"methods": {},
+			"version": 1
+		},
+		"userdoc": {
+			"kind": "user",
+			"methods": {},
+			"version": 1
+		}
+	},
+	"settings": {
+		"compilationTarget": {
+			"IExecutableProposal.sol": "IExecutableProposal"
+		},
+		"evmVersion": "cancun",
+		"libraries": {},
+		"metadata": {
+			"bytecodeHash": "ipfs"
+		},
+		"optimizer": {
+			"enabled": false,
+			"runs": 200
+		},
+		"remappings": []
+	},
+	"sources": {
+		"IExecutableProposal.sol": {
+			"keccak256": "0x256eff01377d4c056cc5d64641f386e82078d2168b2b5818bd525cc47b9eca09",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://a2ce0e73c0298119110814f1d53782bbee6b61bb1743ada38fd99d2fd948367d",
+				"dweb:/ipfs/QmNdqD4FdrTQBsQVcDcMov1UNigHjB4SDjorkB8S4aASrE"
+			]
+		}
+	},
+	"version": 1
+}
