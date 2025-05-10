@@ -1,21 +1,25 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
 import "./IExecutableProposal.sol";
 
 import "./votingToken.sol";
 
-contract QuadraticVoting {
+contract QuadraticVoting is ReentrancyGuard {
     address public owner;
     uint256 public tokenPrice;
     uint256 public maxTokens;
     uint256 public votingBudget;
     bool public isVotingOpen;
+    uint256 public participantCount;
+    mapping(address => uint256) public lockedTokens;
 
     VotingToken public token;
 
     uint256 public proposalCount;
-    uint256[] public proposalIds; // Track proposal IDs
+    uint256[] public proposalIds;
 
     enum ProposalStatus {
         Pending,
@@ -69,8 +73,24 @@ contract QuadraticVoting {
 
     function openVoting() external payable onlyOwner {
         require(!isVotingOpen, "Voting already open");
-        isVotingOpen = true;
+        require(msg.value > 0, "Initial funding required");
         votingBudget = msg.value;
+        isVotingOpen = true;
+    }
+
+    function getParticipantCount() public view returns (uint256) {
+        return participantCount;
+    }
+
+    function _countPendingFunding() internal view returns (uint256) {
+        uint256 count = 0;
+        for (uint256 i = 0; i < proposalIds.length; i++) {
+            Proposal storage p = proposals[proposalIds[i]];
+            if (p.status == ProposalStatus.Pending && p.budget > 0) {
+                count++;
+            }
+        }
+        return count;
     }
 
     function addParticipant() external payable {
@@ -78,9 +98,12 @@ contract QuadraticVoting {
             msg.value >= tokenPrice,
             "Insufficient Ether to buy at least 1 token"
         );
+
         require(!participants[msg.sender], "Already registered");
 
         uint256 tokensToMint = msg.value / tokenPrice;
+        uint256 excess = msg.value % tokenPrice;
+
         require(
             token.totalSupply() + tokensToMint <= maxTokens,
             "Token cap exceeded"
@@ -88,33 +111,61 @@ contract QuadraticVoting {
 
         participants[msg.sender] = true;
         token.mint(msg.sender, tokensToMint);
+        participantCount++;
+
+        
+        if (excess > 0) {
+            (bool refunded, ) = msg.sender.call{value: excess}("");
+            require(refunded, "Refund failed");
+        }
     }
 
-    function removeParticipant() external {
+    function removeParticipant() external nonReentrant {
         require(participants[msg.sender], "Not a participant");
+
         participants[msg.sender] = false;
+        participantCount--;
+
+        uint256 userBalance = token.balanceOf(msg.sender);
+
+        if (userBalance > 0) {
+            token.burn(msg.sender, userBalance);
+
+            
+            uint256 refund = userBalance * tokenPrice;
+            (bool sent, ) = payable(msg.sender).call{value: refund}("");
+            require(sent, "Refund failed");
+        }
     }
 
     function buyTokens() external payable onlyParticipant {
         require(msg.value >= tokenPrice, "Not enough Ether");
+
         uint256 tokensToMint = msg.value / tokenPrice;
+        require(tokensToMint > 0, "Insufficient Ether for 1 token");
         require(
             token.totalSupply() + tokensToMint <= maxTokens,
             "Token cap exceeded"
         );
 
         token.mint(msg.sender, tokensToMint);
+
+        
+        uint256 excess = msg.value % tokenPrice;
+        if (excess > 0) {
+            (bool sent, ) = payable(msg.sender).call{value: excess}("");
+            require(sent, "Refund failed");
+        }
     }
 
-    function sellTokens(uint256 amount) external onlyParticipant {
+    function sellTokens(uint256 amount) external onlyParticipant nonReentrant {
+        require(amount > 0, "Cannot sell zero tokens");
         require(token.balanceOf(msg.sender) >= amount, "Insufficient tokens");
 
         uint256 refund = amount * tokenPrice;
 
-        // Effects first
         token.burn(msg.sender, amount);
 
-        // Interaction last
         (bool sent, ) = payable(msg.sender).call{value: refund}("");
         require(sent, "Refund transfer failed");
     }
@@ -125,8 +176,13 @@ contract QuadraticVoting {
         uint256 budget,
         address proposalAddress
     ) external onlyParticipant votingOpen returns (uint256) {
+        require(proposalAddress.code.length > 0, "Invalid contract address");
+
         proposalCount++;
-        Proposal storage p = proposals[proposalCount];
+        uint256 id = proposalCount;
+
+
+        Proposal storage p = proposals[id];
         p.title = title;
         p.description = description;
         p.budget = budget;
@@ -136,25 +192,29 @@ contract QuadraticVoting {
         p.isSignaling = (budget == 0);
         p.exists = true;
 
-        proposalIds.push(proposalCount); // Track proposal ID
+        proposalIds.push(id);
 
-        return proposalCount;
+        return id;
     }
 
     function cancelProposal(uint256 id) external votingOpen {
         Proposal storage p = proposals[id];
+
         require(p.exists, "Invalid proposal");
-        require(p.creator == msg.sender, "Not creator");
-        require(p.status == ProposalStatus.Pending, "Cannot cancel");
+        require(p.creator == msg.sender, "Only creator can cancel");
+        require(p.status == ProposalStatus.Pending, "Cannot cancel finalized");
+
 
         for (uint256 i = 0; i < p.voters.length; i++) {
             address voter = p.voters[i];
             uint256 votes = p.votes[voter];
             if (votes > 0) {
-                //uint256 tokensToRefund = votes * votes;
 
-                // Burn tokens (no transfer back, tokens stay in the contract)
-                token.burn(voter, votes); // Burn equivalent tokens used for voting
+                uint256 refund = votes * votes;
+
+
+                require(token.transfer(voter, refund), "Token refund failed");
+                lockedTokens[voter] -= refund;
 
                 p.votes[voter] = 0;
             }
@@ -176,7 +236,6 @@ contract QuadraticVoting {
         uint256 prevVotes = p.votes[msg.sender];
         uint256 totalVotes = prevVotes + newVotes;
 
-        // Calculate the tokens to burn for the new votes
         uint256 tokensRequired = totalVotes *
             totalVotes -
             prevVotes *
@@ -191,16 +250,18 @@ contract QuadraticVoting {
             "Token transfer failed"
         );
 
-        // Effects: Update vote count and total votes
+
+        lockedTokens[msg.sender] += tokensRequired;
+
+
         p.votes[msg.sender] = totalVotes;
         p.totalVotes += newVotes;
 
-        // If it's the first vote, track the voter
+
         if (prevVotes == 0) {
             p.voters.push(msg.sender);
         }
 
-        // Check and possibly execute the proposal
         _checkAndExecuteProposal(proposalId);
     }
 
@@ -210,75 +271,54 @@ contract QuadraticVoting {
             return;
         }
 
-        if (p.totalVotes >= 50 && address(this).balance >= p.budget) {
-            // Mark as approved (initially)
-            p.status = ProposalStatus.Approved;
 
-            // Burn tokens and clear vote mappings
-            for (uint256 i = 0; i < p.voters.length; i++) {
-                address voter = p.voters[i];
-                p.votes[voter] = 0; // burn tokens (they stay in contract)
-            }
+        uint256 totalBudget = votingBudget;
+        uint256 numParticipants = participantCount;
+        uint256 numPendingFunds = _countPendingFunding();
 
-            uint256 numVotes = p.totalVotes;
-            uint256 numTokens = numVotes * numVotes;
+        uint256 weightBase = 2e17; // 0.2 * 1e18
+        uint256 frac = (p.budget * 1e18) / totalBudget;
+        uint256 thresholdFP = weightBase + frac;
+        uint256 threshold = (thresholdFP * numParticipants) /
+            1e18 +
+            numPendingFunds;
 
-            (bool success, ) = address(p.recipient).call{
-                value: p.budget,
-                gas: 100_000
-            }(
-                abi.encodeWithSelector(
-                    IExecutableProposal.executeProposal.selector,
-                    proposalId,
-                    numVotes,
-                    numTokens
-                )
-            );
-
-            require(success, "Proposal execution failed");
-
-            // Update budget and status only if call succeeded
-            votingBudget -= p.budget;
-            p.status = ProposalStatus.Executed;
+        if (p.totalVotes < threshold || totalBudget < p.budget) {
+            return;
         }
-    }
 
-    function withdrawFromProposal(uint256 proposalId, uint256 votesToRemove)
-        external
-        votingOpen
-        onlyParticipant
-    {
-        Proposal storage p = proposals[proposalId];
-        require(p.exists, "Invalid proposal");
-        require(
-            p.status == ProposalStatus.Pending,
-            "Cannot withdraw from finalized proposal"
-        );
+        p.status = ProposalStatus.Approved;
 
-        uint256 prevVotes = p.votes[msg.sender];
-        require(
-            prevVotes >= votesToRemove && votesToRemove > 0,
-            "Invalid vote withdrawal"
-        );
+        uint256 numVotes = p.totalVotes;
+        uint256 numTokens = numVotes * numVotes;
 
-        uint256 newVotes = prevVotes - votesToRemove;
-        uint256 refund = prevVotes * prevVotes - newVotes * newVotes;
+        for (uint256 i = 0; i < p.voters.length; i++) {
+            address voter = p.voters[i];
+            uint256 voted = p.votes[voter];
+            if (voted == 0) continue;
 
-        p.votes[msg.sender] = newVotes;
-        p.totalVotes -= votesToRemove;
-
-        require(token.transfer(msg.sender, refund), "Token refund failed");
-
-        // If the user's votes reach zero, remove them from the voters list
-        if (newVotes == 0) {
-            for (uint256 i = 0; i < p.voters.length; i++) {
-                if (p.voters[i] == msg.sender) {
-                    p.voters[i] = p.voters[p.voters.length - 1];
-                    p.voters.pop();
-                    break;
-                }
-            }
+            uint256 usedTokens = voted * voted;
+            lockedTokens[voter] -= usedTokens;
+            p.votes[voter] = 0;
         }
+
+        votingBudget += (numTokens * tokenPrice);
+
+        (bool success, ) = address(p.recipient).call{
+            value: p.budget,
+            gas: 100_000
+        }(
+            abi.encodeWithSelector(
+                IExecutableProposal.executeProposal.selector,
+                proposalId,
+                numVotes,
+                numTokens
+            )
+        );
+        require(success, "Proposal execution failed");
+
+        votingBudget -= p.budget;
+        p.status = ProposalStatus.Executed;
     }
 
     function closeVoting() external onlyOwner votingOpen {
@@ -290,33 +330,43 @@ contract QuadraticVoting {
             if (p.status != ProposalStatus.Pending) continue;
 
             if (p.budget == 0) {
-                // Signaling proposal — execute with no Ether
                 p.status = ProposalStatus.Executed;
 
-                uint256 numVotes = p.totalVotes; // Total votes cast for this proposal
-                uint256 numTokens = numVotes * numVotes; // Total tokens used for votes (quadratic voting)
+                uint256 numVotes = p.totalVotes;
+                uint256 numTokens = numVotes * numVotes;
 
                 try
                     IExecutableProposal(p.recipient).executeProposal{
                         gas: 100_000
                     }(proposalIds[i], numVotes, numTokens)
                 {} catch {}
-            } else {
-                // Funding proposal not approved — refund voters
+
                 for (uint256 j = 0; j < p.voters.length; j++) {
                     address voter = p.voters[j];
                     uint256 votes = p.votes[voter];
                     if (votes > 0) {
-                        uint256 refund = votes * votes; // Refund the tokens used for voting
+                        uint256 refund = votes * votes;
+                        require(token.transfer(voter, refund), "Refund failed");
+                        p.votes[voter] = 0;
+                        lockedTokens[voter] -= refund;
+                    }
+                }
+            } else {
+                for (uint256 j = 0; j < p.voters.length; j++) {
+                    address voter = p.voters[j];
+                    uint256 votes = p.votes[voter];
+                    if (votes > 0) {
+                        uint256 refund = votes * votes;
                         require(token.transfer(voter, refund), "Refund failed");
                         p.votes[voter] = 0;
                     }
                 }
                 p.status = ProposalStatus.Dismissed;
+
+
             }
         }
 
-        // Return remaining unspent Ether to owner
         uint256 remainingBalance = address(this).balance;
         (bool sent, ) = owner.call{value: remainingBalance}("");
         require(sent, "Budget refund failed");
@@ -432,5 +482,48 @@ contract QuadraticVoting {
             p.isSignaling,
             p.totalVotes
         );
+    }
+
+    function withdrawFromProposal(uint256 proposalId, uint256 votesToRemove)
+        external
+        votingOpen
+        onlyParticipant
+    {
+        Proposal storage p = proposals[proposalId];
+        require(p.exists, "Invalid proposal");
+        require(
+            p.status == ProposalStatus.Pending,
+            "Cannot withdraw from finalized proposal"
+        );
+
+        uint256 prevVotes = p.votes[msg.sender];
+        require(
+            prevVotes >= votesToRemove && votesToRemove > 0,
+            "Invalid vote withdrawal"
+        );
+
+        uint256 newVotes = prevVotes - votesToRemove;
+        uint256 refund = prevVotes * prevVotes - newVotes * newVotes;
+
+        p.votes[msg.sender] = newVotes;
+        p.totalVotes -= votesToRemove;
+
+        lockedTokens[msg.sender] -= refund;
+
+        require(token.transfer(msg.sender, refund), "Token refund failed");
+
+        if (newVotes == 0) {
+            for (uint256 i = 0; i < p.voters.length; i++) {
+                if (p.voters[i] == msg.sender) {
+                    p.voters[i] = p.voters[p.voters.length - 1];
+                    p.voters.pop();
+                    break;
+                }
+            }
+        }
+    }
+
+    receive() external payable {
+        revert("Send ether through defined functions");
     }
 }
