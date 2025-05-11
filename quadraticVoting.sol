@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "./IExecutableProposal.sol";
 
@@ -64,14 +64,14 @@ contract QuadraticVoting is ReentrancyGuard {
     }
 
     // Constructor initializes contract settings
-    constructor(uint256 _tokenPrice, uint256 _maxTokens) {
+    constructor(uint256 _tokenPrice, uint256 _maxTokens, address _tokenAddress) {
         require(_tokenPrice > 0, "Invalid token price");
         require(_maxTokens > 0, "Invalid token cap");
 
         owner = msg.sender;
         tokenPrice = _tokenPrice;
         maxTokens = _maxTokens;
-        token = new VotingToken(0);
+        token = VotingToken(_tokenAddress);
     }
 
     event VotingOpened(uint256 initialBudget);
@@ -102,30 +102,33 @@ contract QuadraticVoting is ReentrancyGuard {
         return count;
     }
 
-event ParticipantRegistered(address participant, uint256 tokensMinted, uint256 excessRefund);
+    // Register new participant and mint tokens
+    function addParticipant() external payable {
+        require(
+            msg.value >= tokenPrice,
+            "Insufficient Ether to buy at least 1 token"
+        );
 
-// Register new participant and mint tokens
-function addParticipant() external payable {
-    require(msg.value >= tokenPrice, "Insufficient Ether to buy at least 1 token");
-    require(!participants[msg.sender], "Already registered");
+        require(!participants[msg.sender], "Already registered");
 
-    uint256 tokensToMint = msg.value / tokenPrice;
-    uint256 excess = msg.value % tokenPrice;
+        uint256 tokensToMint = msg.value / tokenPrice;
+        uint256 excess = msg.value % tokenPrice;
 
-    require(token.totalSupply() + tokensToMint <= maxTokens, "Token cap exceeded");
+        require(
+            token.totalSupply() + tokensToMint <= maxTokens,
+            "Token cap exceeded"
+        );
 
-    participants[msg.sender] = true;
-    token.mint(msg.sender, tokensToMint);
-    participantCount++;
-    emit ParticipantRegistered(msg.sender, tokensToMint, excess);
+        participants[msg.sender] = true;
+        token.mint(msg.sender, tokensToMint);
+        participantCount++;
 
-    // Refund any excess ETH
-    if (excess > 0) {
-        (bool refunded, ) = msg.sender.call{value: excess}("");
-        require(refunded, "Refund failed");
+        // Refund any excess ETH
+        if (excess > 0) {
+            (bool refunded, ) = msg.sender.call{value: excess}("");
+            require(refunded, "Refund failed");
+        }
     }
-}
-
 
     // Allows a participant to deregister and get their ETH back
     function removeParticipant() external nonReentrant {
@@ -171,22 +174,18 @@ function addParticipant() external payable {
 
     // Allows participants to sell their unlocked tokens
     function sellTokens(uint256 amount) external onlyParticipant nonReentrant {
-    require(amount > 0, "Cannot sell zero tokens");
+        require(amount > 0, "Cannot sell zero tokens");
 
-    uint256 total = token.balanceOf(msg.sender);
-    uint256 locked = lockedTokens[msg.sender];
+        uint256 freeBalance = token.balanceOf(msg.sender) - lockedTokens[msg.sender];
+        require(freeBalance >= amount, "Cannot sell locked tokens");
 
-    // Prevent underflow by checking this first
-    require(total >= locked + amount, "Cannot sell locked tokens");
+        uint256 refund = amount * tokenPrice;
 
-    uint256 refund = amount * tokenPrice;
+        token.burn(msg.sender, amount);
 
-    token.burn(msg.sender, amount);
-
-    (bool sent, ) = payable(msg.sender).call{value: refund}("");
-    require(sent, "Refund transfer failed");
-}
-
+        (bool sent, ) = payable(msg.sender).call{value: refund}("");
+        require(sent, "Refund transfer failed");
+    }
 
      // Create a new proposal
     function addProposal(

@@ -48,6 +48,8 @@ contract QuadraticVoting is ReentrancyGuard {
     mapping(address => bool) public participants;
     mapping(uint256 => Proposal) private proposals;
 
+   
+
     modifier onlyOwner() {
         require(msg.sender == owner, "Not the owner");
         _;
