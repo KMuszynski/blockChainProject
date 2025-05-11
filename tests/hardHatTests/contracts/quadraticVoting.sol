@@ -102,33 +102,30 @@ contract QuadraticVoting is ReentrancyGuard {
         return count;
     }
 
-    // Register new participant and mint tokens
-    function addParticipant() external payable {
-        require(
-            msg.value >= tokenPrice,
-            "Insufficient Ether to buy at least 1 token"
-        );
+event ParticipantRegistered(address participant, uint256 tokensMinted, uint256 excessRefund);
 
-        require(!participants[msg.sender], "Already registered");
+// Register new participant and mint tokens
+function addParticipant() external payable {
+    require(msg.value >= tokenPrice, "Insufficient Ether to buy at least 1 token");
+    require(!participants[msg.sender], "Already registered");
 
-        uint256 tokensToMint = msg.value / tokenPrice;
-        uint256 excess = msg.value % tokenPrice;
+    uint256 tokensToMint = msg.value / tokenPrice;
+    uint256 excess = msg.value % tokenPrice;
 
-        require(
-            token.totalSupply() + tokensToMint <= maxTokens,
-            "Token cap exceeded"
-        );
+    require(token.totalSupply() + tokensToMint <= maxTokens, "Token cap exceeded");
 
-        participants[msg.sender] = true;
-        token.mint(msg.sender, tokensToMint);
-        participantCount++;
+    participants[msg.sender] = true;
+    token.mint(msg.sender, tokensToMint);
+    participantCount++;
+    emit ParticipantRegistered(msg.sender, tokensToMint, excess);
 
-        // Refund any excess ETH
-        if (excess > 0) {
-            (bool refunded, ) = msg.sender.call{value: excess}("");
-            require(refunded, "Refund failed");
-        }
+    // Refund any excess ETH
+    if (excess > 0) {
+        (bool refunded, ) = msg.sender.call{value: excess}("");
+        require(refunded, "Refund failed");
     }
+}
+
 
     // Allows a participant to deregister and get their ETH back
     function removeParticipant() external nonReentrant {
@@ -174,18 +171,22 @@ contract QuadraticVoting is ReentrancyGuard {
 
     // Allows participants to sell their unlocked tokens
     function sellTokens(uint256 amount) external onlyParticipant nonReentrant {
-        require(amount > 0, "Cannot sell zero tokens");
+    require(amount > 0, "Cannot sell zero tokens");
 
-        uint256 freeBalance = token.balanceOf(msg.sender) - lockedTokens[msg.sender];
-        require(freeBalance >= amount, "Cannot sell locked tokens");
+    uint256 total = token.balanceOf(msg.sender);
+    uint256 locked = lockedTokens[msg.sender];
 
-        uint256 refund = amount * tokenPrice;
+    // Prevent underflow by checking this first
+    require(total >= locked + amount, "Cannot sell locked tokens");
 
-        token.burn(msg.sender, amount);
+    uint256 refund = amount * tokenPrice;
 
-        (bool sent, ) = payable(msg.sender).call{value: refund}("");
-        require(sent, "Refund transfer failed");
-    }
+    token.burn(msg.sender, amount);
+
+    (bool sent, ) = payable(msg.sender).call{value: refund}("");
+    require(sent, "Refund transfer failed");
+}
+
 
      // Create a new proposal
     function addProposal(
