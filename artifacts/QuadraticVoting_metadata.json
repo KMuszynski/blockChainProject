@@ -205,6 +205,19 @@
 			},
 			{
 				"inputs": [],
+				"name": "getVotingStatus",
+				"outputs": [
+					{
+						"internalType": "bool",
+						"name": "",
+						"type": "bool"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [],
 				"name": "isVotingOpen",
 				"outputs": [
 					{
@@ -516,11 +529,11 @@
 			]
 		},
 		"quadraticVoting.sol": {
-			"keccak256": "0xad9f0943661751b865acac358ee90ad823fabdea24b2eaa9634a1de63d0dadf0",
+			"keccak256": "0xeb9c54e2e83e7911a292cc5d1957d9b57136c174354680d74d3ca893c1b3a705",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://21048466a8febdc5b2c61aecc1687e5814208829d161d5ec1b93c28b3d083047",
-				"dweb:/ipfs/QmRhWk8c7xX7UmQ4Wg92BMPLQSg8fTPnn7TfxU7y9t9kZz"
+				"bzz-raw://cb08d7c4dac5429988354c0c68138005b1b8a5c2911f9c6e8d8055c04f1a6876",
+				"dweb:/ipfs/QmXRvef4mbvh4UDX8cVFBheDdgDU25aRbCT5nig4GN2mRN"
 			]
 		},
 		"votingToken.sol": {

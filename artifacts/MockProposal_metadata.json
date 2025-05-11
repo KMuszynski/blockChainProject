@@ -1,0 +1,116 @@
+{
+	"compiler": {
+		"version": "0.8.30+commit.73712a01"
+	},
+	"language": "Solidity",
+	"output": {
+		"abi": [
+			{
+				"inputs": [
+					{
+						"internalType": "uint256",
+						"name": "proposalId",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "totalVotes",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "totalTokens",
+						"type": "uint256"
+					}
+				],
+				"name": "executeProposal",
+				"outputs": [],
+				"stateMutability": "payable",
+				"type": "function"
+			},
+			{
+				"inputs": [],
+				"name": "lastId",
+				"outputs": [
+					{
+						"internalType": "uint256",
+						"name": "",
+						"type": "uint256"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [],
+				"name": "lastTokens",
+				"outputs": [
+					{
+						"internalType": "uint256",
+						"name": "",
+						"type": "uint256"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [],
+				"name": "lastVotes",
+				"outputs": [
+					{
+						"internalType": "uint256",
+						"name": "",
+						"type": "uint256"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			}
+		],
+		"devdoc": {
+			"kind": "dev",
+			"methods": {},
+			"version": 1
+		},
+		"userdoc": {
+			"kind": "user",
+			"methods": {},
+			"version": 1
+		}
+	},
+	"settings": {
+		"compilationTarget": {
+			"mockProposal.sol": "MockProposal"
+		},
+		"evmVersion": "prague",
+		"libraries": {},
+		"metadata": {
+			"bytecodeHash": "ipfs"
+		},
+		"optimizer": {
+			"enabled": false,
+			"runs": 200
+		},
+		"remappings": []
+	},
+	"sources": {
+		"IExecutableProposal.sol": {
+			"keccak256": "0x256eff01377d4c056cc5d64641f386e82078d2168b2b5818bd525cc47b9eca09",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://a2ce0e73c0298119110814f1d53782bbee6b61bb1743ada38fd99d2fd948367d",
+				"dweb:/ipfs/QmNdqD4FdrTQBsQVcDcMov1UNigHjB4SDjorkB8S4aASrE"
+			]
+		},
+		"mockProposal.sol": {
+			"keccak256": "0xc883bed92ce6eac25cf62b03ed2136775a76a5c0a01d361a0421a4ee5e0f9d26",
+			"license": "GPL-3.0",
+			"urls": [
+				"bzz-raw://07aaf54fee91dc6d349a7d7b8c891c2f57175ec2765d540cf639fca76391dca4",
+				"dweb:/ipfs/QmfYRwvMYY8SuL7kXsk25Ad6fxJBQcy38soaqBDG6TBXkN"
+			]
+		}
+	},
+	"version": 1
+}
